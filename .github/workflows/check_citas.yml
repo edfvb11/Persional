@@ -3,16 +3,7 @@ name: Monitor cita embajada Japon
 on:
   schedule:
     - cron: '*/10 * * * *'   # cada 10 minutos
-  workflow_dispatch:
-    inputs:
-      modo:
-        description: 'normal o prueba (prueba manda un correo de prueba para verificar la config)'
-        required: false
-        default: 'normal'
-
-concurrency:
-  group: check-citas
-  cancel-in-progress: false
+  workflow_dispatch:          # permite correrlo manualmente desde la pestaña Actions
 
 permissions:
   contents: write
@@ -23,7 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
+          persist-credentials: true
 
       - uses: actions/setup-python@v5
         with:
@@ -33,63 +26,30 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Revisar calendario
-        if: github.event.inputs.modo != 'prueba'
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
         run: python check_citas.py
 
-      - name: Enviar correo de prueba
-        if: github.event.inputs.modo == 'prueba'
-        env:
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
-        run: |
-          python -c "
-          import os, smtplib
-          from email.mime.text import MIMEText
-          remitente = os.environ['GMAIL_USER']
-          clave = os.environ['GMAIL_APP_PASSWORD']
-          destinatario = os.environ.get('NOTIFY_EMAIL', remitente)
-          msg = MIMEText('Este es un correo de prueba. Si lo recibiste, la configuracion de correo funciona bien.')
-          msg['Subject'] = 'Prueba - Monitor cita Japon'
-          msg['From'] = remitente
-          msg['To'] = destinatario
-          with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-              server.login(remitente, clave)
-              server.sendmail(remitente, [destinatario], msg.as_string())
-          print('Correo de prueba enviado')
-          "
-
       - name: Guardar estado
-        if: github.event.inputs.modo != 'prueba'
         run: |
           git config user.name "cita-bot"
           git config user.email "cita-bot@users.noreply.github.com"
           git add state.json
 
+          # Si no hay cambios, salir
           if git diff --staged --quiet; then
-            echo "Sin cambios en state.json, no hay nada que subir."
+            echo "No hay cambios para commitear"
             exit 0
           fi
 
+          # Asegurar que la rama local esté sincronizada con el remoto
+          git fetch origin main
+          # Intentar rebase con autostash para integrar cambios remotos
+          git rebase origin/main --autostash || git pull --rebase origin main
+
           git commit -m "Actualizar estado del calendario"
 
-          intento=1
-          hasta=5
-          while [ $intento -le $hasta ]; do
-            if git push; then
-              echo "Push exitoso."
-              exit 0
-            fi
-            echo "Push rechazado (intento $intento de $hasta). Sincronizando y reintentando..."
-            git fetch origin main
-            git rebase origin/main
-            intento=$((intento + 1))
-            sleep 5
-          done
-
-          echo "No se pudo subir el estado tras varios intentos."
-          exit 1
+          # Empujar usando las credenciales persistentes
+          git push origin HEAD:main
