@@ -7,10 +7,13 @@ un día con cupo disponible que antes no lo tenía.
 import json
 import os
 import smtplib
+import time
+import random
 from email.mime.text import MIMEText
 
 import requests
 from bs4 import BeautifulSoup
+from fake_useragent import UserAgent  # <-- NUEVO: Importar generador de User-Agents
 
 URL = "https://embjpcol.rsvsys.jp/reservations/calendar"
 STATE_FILE = "state.json"
@@ -18,8 +21,34 @@ STATE_FILE = "state.json"
 
 def obtener_estado():
     """Descarga el calendario y devuelve {dia: disponible(bool)}."""
-    resp = requests.get(URL, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    
+    # 1. Inicializar el generador de User-Agents y crear una Sesión
+    ua = UserAgent()
+    session = requests.Session()
+    
+    # 2. Generar headers realistas (simulando un navegador Chrome real)
+    headers = {
+        'User-Agent': ua.random,  # Navegador aleatorio en cada ejecución
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'es-CO,es;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1'
+    }
+    session.headers.update(headers)
+    
+    # 3. Añadir un retraso aleatorio antes de la petición (Comportamiento humano)
+    # Los bots piden la página en el milisegundo exacto, los humanos tardan segundos
+    time.sleep(random.uniform(2.0, 5.0))
+    
+    # 4. Hacer la petición usando la sesión configurada
+    resp = session.get(URL, timeout=30)
     resp.raise_for_status()
+    
     soup = BeautifulSoup(resp.text, "html.parser")
 
     estado = {}
