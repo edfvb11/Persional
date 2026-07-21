@@ -3,7 +3,12 @@ name: Monitor cita embajada Japon
 on:
   schedule:
     - cron: '*/10 * * * *'   # cada 10 minutos
-  workflow_dispatch:          # permite correrlo manualmente desde la pestaña Actions
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: 'normal o prueba (prueba manda un correo de prueba para verificar la config)'
+        required: false
+        default: 'normal'
 
 permissions:
   contents: write
@@ -22,13 +27,38 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Revisar calendario
+        if: github.event.inputs.modo != 'prueba'
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
         run: python check_citas.py
 
+      - name: Enviar correo de prueba
+        if: github.event.inputs.modo == 'prueba'
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+        run: |
+          python -c "
+          import os, smtplib
+          from email.mime.text import MIMEText
+          remitente = os.environ['GMAIL_USER']
+          clave = os.environ['GMAIL_APP_PASSWORD']
+          destinatario = os.environ.get('NOTIFY_EMAIL', remitente)
+          msg = MIMEText('Este es un correo de prueba. Si lo recibiste, la configuracion de correo funciona bien.')
+          msg['Subject'] = 'Prueba - Monitor cita Japon'
+          msg['From'] = remitente
+          msg['To'] = destinatario
+          with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+              server.login(remitente, clave)
+              server.sendmail(remitente, [destinatario], msg.as_string())
+          print('Correo de prueba enviado')
+          "
+
       - name: Guardar estado
+        if: github.event.inputs.modo != 'prueba'
         run: |
           git config user.name "cita-bot"
           git config user.email "cita-bot@users.noreply.github.com"
