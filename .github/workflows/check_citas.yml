@@ -1,9 +1,7 @@
 name: Monitor cita embajada Japon
 
 on:
-  schedule:
-    - cron: '*/10 * * * *'   # cada 10 minutos
-  workflow_dispatch:          # permite correrlo manualmente desde la pestaña Actions
+  workflow_dispatch:          # SOLO se activará cuando reciba la señal externa
 
 permissions:
   contents: write
@@ -44,12 +42,7 @@ jobs:
             exit 0
           fi
 
-          # Asegurar que la rama local esté sincronizada con el remoto
           git fetch origin main
-          # Intentar rebase con autostash para integrar cambios remotos
           git rebase origin/main --autostash || git pull --rebase origin main
-
           git commit -m "Actualizar estado del calendario"
-
-          # Empujar usando las credenciales persistentes
           git push origin HEAD:main
